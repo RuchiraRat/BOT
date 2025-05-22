@@ -14,7 +14,9 @@ from telegram.error import Conflict, TelegramError
 # --- Configuration ---
 BOT_TOKEN = "8053841837:AAG8E90NDtrEMJFuADSXoM2CRGFf49IrAic"
 OWNER_ID = 6814396510
-ADMIN_IDS = [7110958447]
+ADMIN_IDS = [7110958447] #Chethiya Dialog
+ADMIN_IDS = [7379431450] #Chethiya mobitel
+
 GROUP_ID = -1002686597510  # <-- Your group ID is hardcoded here
 
 # Enable logging
