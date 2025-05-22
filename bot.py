@@ -12,7 +12,7 @@ from telegram.ext import (
 from telegram.error import Conflict, TelegramError
 
 # --- Configuration ---
-BOT_TOKEN = "8053841837:AAG8E90NDtrEMJFuADSXoM2CRGFf49IrAic"
+BOT_TOKEN = "8053841837:AAH5lDzkh4Y7SCptEFP-k1YsovxCJsDr74c"
 OWNER_ID = 6814396510
 ADMIN_IDS = [7110958447] #Chethiya Dialog
 ADMIN_IDS = [7379431450] #Chethiya mobitel
