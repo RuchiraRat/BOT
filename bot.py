@@ -12,12 +12,10 @@ from telegram.ext import (
 from telegram.error import Conflict, TelegramError
 
 # --- Configuration ---
-BOT_TOKEN = "8053841837:AAH5lDzkh4Y7SCptEFP-k1YsovxCJsDr74c"
-OWNER_ID = 6814396510
-
-ADMIN_IDS = [7110958447] #Chethiya Dialog
-
-GROUP_ID = -1002686597510  # <-- Your group ID is hardcoded here
+BOT_TOKEN = "7953051635:AAGfQ3mXdgPVC4GXQWF_jeHiMVuxD5plCDQ"
+OWNER_ID =  5028751785
+ADMIN_IDS = [8171653284] #my no
+GROUP_ID = -1002678613745  # Your group ID
 
 # Enable logging
 logging.basicConfig(
@@ -26,8 +24,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Store conversations
+# Store conversations and reply targets
 conversations = {}
+admin_reply_targets = {}  # Admin ID -> User ID
 
 # --- Helper Functions ---
 def is_admin(user_id):
@@ -41,62 +40,67 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Send me your message and our team will reply soon."
     )
 
+# --- Message Handler ---
 async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         user = update.effective_user
         message = update.message
+        logger.info(f"Received message from chat {update.effective_chat.id}, user {user.id}")
 
-        # Ignore messages sent in the group itself
         if update.effective_chat.id == GROUP_ID:
-            # If admin is replying in the group, handle reply
-            if is_admin(user.id) and "replying_to" in context.chat_data:
-                user_id = context.chat_data["replying_to"]
+            logger.info(f"Message in group from user {user.id}, is_admin: {is_admin(user.id)}, has_reply_target: {user.id in admin_reply_targets}")
+            if is_admin(user.id) and user.id in admin_reply_targets:
+                user_id = admin_reply_targets[user.id]
                 reply_text = message.text or (message.caption if message.caption else None)
                 sent = False
 
-                # Send text reply
-                if reply_text:
-                    await context.bot.send_message(
-                        chat_id=user_id,
-                        text=f"💌 Reply from admin ({user.full_name}):\n\n{reply_text}"
-                    )
-                    sent = True
-
-                # Send photo if present
-                if message.photo:
-                    await context.bot.send_photo(
-                        chat_id=user_id,
-                        photo=message.photo[-1].file_id,
-                        caption=f"📷 Photo from admin ({user.full_name})"
-                    )
-                    sent = True
+                try:
+                    if reply_text:
+                        await context.bot.send_message(
+                            chat_id=user_id,
+                            text=f"💌 Reply from admin ({user.first_name}):\n\n{reply_text}"
+                        )
+                        sent = True
+                    if message.photo:
+                        photo_caption = f"📷 Photo from admin ({user.first_name})"
+                        if message.caption:
+                            photo_caption += f"\n\n{message.caption}"
+                        await context.bot.send_photo(
+                            chat_id=user_id,
+                            photo=message.photo[-1].file_id,
+                            caption=photo_caption
+                        )
+                        sent = True
+                except TelegramError as e:
+                    logger.error(f"Failed to send message to user {user_id}: {e}")
+                    await message.reply_text(f"⚠️ Failed to send message to user {user_id}: {e}")
+                    return
 
                 if sent:
                     await message.reply_text("✅ Reply sent to user.")
                     await context.bot.send_message(
                         chat_id=GROUP_ID,
-                        text=f"📤 Admin {user.full_name} replied to user {user_id}."
+                        text=f"📤 Admin {user.first_name} replied to user {user_id}."
                     )
                 else:
                     await message.reply_text("⚠️ Please send a text or photo as a reply.")
 
-                del context.chat_data["replying_to"]
+                del admin_reply_targets[user.id]
             return
 
-        # If admin is replying in private chat (not supported)
-        if is_admin(user.id) and "replying_to" in context.user_data:
+        # Prevent admin replies in private
+        if is_admin(user.id) and user.id in admin_reply_targets:
             await message.reply_text("❌ Please reply from the group, not in private chat.")
             return
 
-        # Regular user message - store the conversation
+        # Regular user message
         conversations[user.id] = {
             "last_message": message,
             "timestamp": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
-        user_info = f"👤 User: {user.full_name}\n🆔 ID: {user.id}\n⏱️ Time: {datetime.datetime.now().strftime('%H:%M:%S')}"
+        user_info = f"👤 User: {user.first_name}\n🆔 ID: {user.id}\n⏱️ Time: {datetime.datetime.now().strftime('%H:%M:%S')}"
         reply_keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("💬 Reply", callback_data=f"reply_{user.id}")]])
 
-        # Forward to the group
         try:
             if message.text:
                 notification_text = f"📩 New message\n\n{user_info}\n\n{message.text}"
@@ -128,7 +132,7 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 try:
                     await context.bot.send_message(
                         chat_id=admin_id,
-                        text=f"⚠️ Failed to send to group. Message from {user.full_name}:\n\n{message.text or '[Media]'}"
+                        text=f"⚠️ Failed to send to group. Message from {user.first_name}:\n\n{message.text or '[Media]'}"
                     )
                 except:
                     pass
@@ -139,6 +143,7 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         logger.error(f"Error in handle_user_message: {e}")
         await update.message.reply_text("⚠️ An error occurred. Please try again.")
 
+# --- Callback Handler ---
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         query = update.callback_query
@@ -150,36 +155,31 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
         if query.data.startswith("reply_"):
             user_id = int(query.data.split("_")[1])
-            context.chat_data["replying_to"] = user_id
+            admin_reply_targets[admin.id] = user_id
+            logger.info(f"Set reply target for admin {admin.id} to user {user_id}")
 
             user_info = ""
             if user_id in conversations:
                 last_message_time = conversations[user_id].get("timestamp", "unknown time")
                 user_info = f"\n\nReplying to user ID: {user_id}\nLast message at: {last_message_time}"
 
-            # Check if original message is text or photo with caption
             if query.message.text:
-                # Original message is text
                 base_text = query.message.text
                 await query.edit_message_text(
                     base_text + f"{user_info}\n\n💬 Please type your reply (text or photo) in the group."
                 )
             elif query.message.photo:
-                # Original message is a photo (possibly with caption)
                 base_caption = query.message.caption or ""
                 await query.edit_message_caption(
                     caption=base_caption + f"{user_info}\n\n💬 Please type your reply (text or photo) in the group."
                 )
             else:
-                # Neither text nor photo found, fallback
                 await query.answer("Cannot edit this message type.", show_alert=True)
 
     except Exception as e:
         logger.error(f"Error in handle_callback: {e}")
 
-
-
-
+# --- Optional Command Handler ---
 async def handle_admin_reply_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         admin = update.effective_user
@@ -191,24 +191,23 @@ async def handle_admin_reply_command(update: Update, context: ContextTypes.DEFAU
             return
         user_id = int(context.args[0])
         reply_text = " ".join(context.args[1:])
-        try:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"💌 Reply from admin ({admin.full_name}):\n\n{reply_text}"
-            )
-            await update.message.reply_text("✅ Reply sent successfully.")
-            await context.bot.send_message(
-                chat_id=GROUP_ID,
-                text=f"📤 Admin {admin.full_name} replied to user {user_id} via command."
-            )
-        except TelegramError as e:
-            logger.error(f"Failed to send reply to user {user_id}: {e}")
-            await update.message.reply_text("⚠️ Failed to send reply. Please try again.")
+        await context.bot.send_message(
+            chat_id=user_id,
+            text=f"💌 Reply from admin ({admin.first_name}):\n\n{reply_text}"
+        )
+        await update.message.reply_text("✅ Reply sent successfully.")
+        await context.bot.send_message(
+            chat_id=GROUP_ID,
+            text=f"📤 Admin {admin.first_name} replied to user {user_id} via command."
+        )
+    except TelegramError as e:
+        logger.error(f"Failed to send reply to user {user_id}: {e}")
+        await update.message.reply_text("⚠️ Failed to send reply. Please try again.")
     except Exception as e:
         logger.error(f"Error in handle_admin_reply_command: {e}")
         await update.message.reply_text("⚠️ Failed to send reply. Please try again.")
 
-# --- Error Handling ---
+# --- Error Handler ---
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     logger.error(f"Update {update} caused error: {context.error}")
     if update and hasattr(update, 'message') and update.message:
@@ -217,7 +216,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
         except:
             pass
 
-# --- Main Application ---
+# --- Main Bot Application ---
 def main() -> None:
     try:
         application = ApplicationBuilder().token(BOT_TOKEN).build()
