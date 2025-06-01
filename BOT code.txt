@@ -2,12 +2,12 @@ import logging
 import sqlite3
 import json
 import time
-import os
 from datetime import datetime
 from dataclasses import dataclass, asdict
 from typing import Dict, List, Optional
 from collections import defaultdict
 import asyncio
+import os
 
 from telegram import (
     Update, 
@@ -23,8 +23,7 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
-from telegram.error import TelegramError, Conflict, NetworkError, TimedOut
-from telegram.request import HTTPXRequest
+from telegram.error import TelegramError
 
 # Configure logging
 logging.basicConfig(
@@ -33,13 +32,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Suppress httpx INFO logs to reduce noise
-logging.getLogger("httpx").setLevel(logging.WARNING)
-
-# Bot Configuration - Use environment variables for security
-BOT_TOKEN = os.getenv("BOT_TOKEN", "7953051635:AAGfQ3mXdgPVC4GXQWF_jeHiMVuxD5plCDQ")
-GROUP_ID = int(os.getenv("GROUP_ID", "-1002678613745"))
-ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "5028751785,8171653284").split(",")]
+# Bot Configuration - REPLACE WITH YOUR ACTUAL VALUES
+BOT_TOKEN = "7953051635:AAGfQ3mXdgPVC4GXQWF_jeHiMVuxD5plCDQ"  # Replace with your actual bot token
+GROUP_ID = -1002678613745  # Replace with your actual group ID
+ADMIN_IDS = [5028751785, 8171653284, 8171653284]  # Replace with actual admin user IDs
 
 # Global variables for admin replies
 admin_reply_targets: Dict[int, int] = {}
@@ -199,7 +195,6 @@ class UserManager:
             del self.active_users[user_id]
         
         logger.info(f"Cleaned up {len(inactive_users)} inactive users")
-        return len(inactive_users)
 
 # Initialize components
 user_manager = UserManager()
@@ -309,22 +304,15 @@ async def active_replies_command(update: Update, context: ContextTypes.DEFAULT_T
     
     replies_list = "💬 **Active Reply Sessions:**\n\n"
     for admin_id, target_user_id in admin_reply_targets.items():
-        try:
-            admin_user = await context.bot.get_chat(admin_id)
-            target_session = user_manager.active_users.get(target_user_id)
-            target_name = target_session.first_name if target_session else "Unknown"
-            
-            replies_list += (
-                f"👨‍💼 Admin: {admin_user.first_name}\n"
-                f"👤 Replying to: {target_name} (`{target_user_id}`)\n"
-                "─────────────\n"
-            )
-        except TelegramError:
-            replies_list += (
-                f"👨‍💼 Admin: Unknown (`{admin_id}`)\n"
-                f"👤 Replying to: Unknown (`{target_user_id}`)\n"
-                "─────────────\n"
-            )
+        admin_user = await context.bot.get_chat(admin_id)
+        target_session = user_manager.active_users.get(target_user_id)
+        target_name = target_session.first_name if target_session else "Unknown"
+        
+        replies_list += (
+            f"👨‍💼 Admin: {admin_user.first_name}\n"
+            f"👤 Replying to: {target_name} (`{target_user_id}`)\n"
+            "─────────────\n"
+        )
     
     await update.message.reply_text(replies_list, parse_mode='Markdown')
 
@@ -337,7 +325,7 @@ async def cleanup_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         return
     
     before_count = user_manager.get_active_users_count()
-    cleaned_users = user_manager.cleanup_inactive_users()
+    user_manager.cleanup_inactive_users()
     after_count = user_manager.get_active_users_count()
     
     # Also cleanup expired reply sessions
@@ -345,7 +333,7 @@ async def cleanup_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     
     await update.message.reply_text(
         f"🧹 **Cleanup completed!**\n\n"
-        f"👥 Removed {cleaned_users} inactive users\n"
+        f"👥 Removed {before_count - after_count} inactive users\n"
         f"💬 Cleared {expired_replies} expired reply sessions\n"
         f"📊 Active users now: {after_count}",
         parse_mode='Markdown'
@@ -530,7 +518,7 @@ async def handle_user_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             pass
 
 async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user_session: UserSession) -> None:
-    """Handle admin replies to users"""
+    """Handle admin replies to users - FIXED VERSION with continuous reply"""
     try:
         admin = update.effective_user
         target_user_id = admin_reply_targets.get(admin.id)
@@ -583,6 +571,7 @@ async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE,
                     caption=f"💬 **Support Team:**\n\n{message.caption or ''}",
                     parse_mode='Markdown'
                 )
+            # Add more message types as needed
             
             # Create inline keyboard for continued conversation
             continue_keyboard = InlineKeyboardMarkup([
@@ -615,6 +604,8 @@ async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE,
             # Clear reply target if message fails
             if admin.id in admin_reply_targets:
                 del admin_reply_targets[admin.id]
+        
+        # IMPORTANT: DON'T delete admin_reply_targets[admin.id] here - keep reply mode active!
         
     except Exception as e:
         logger.error(f"Error in handle_admin_reply: {e}")
@@ -703,7 +694,7 @@ async def delete_user_chat(update: Update, context: ContextTypes.DEFAULT_TYPE, u
         await update.callback_query.answer("❌ Error deleting chat", show_alert=True)
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle inline keyboard callbacks"""
+    """Handle inline keyboard callbacks - UPDATED VERSION with continuous reply fix"""
     try:
         query = update.callback_query
         admin = query.from_user
@@ -717,7 +708,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if query.data.startswith("reply_"):
             user_id = int(query.data.split("_")[1])
             admin_reply_targets[admin.id] = user_id
-            user_manager.set_admin_reply_timeout(admin.id)
+            user_manager.set_admin_reply_timeout(admin.id)  # Set timeout
             
             user_session = user_manager.active_users.get(user_id)
             user_info = f"Replying to: {user_session.first_name if user_session else 'Unknown'} (ID: {user_id})"
@@ -781,7 +772,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             
             # Log the action
             user_manager.log_admin_action(admin.id, "ended_reply_mode", user_id)
-            
+
         elif query.data.startswith("delete_"):
             user_id = int(query.data.split("_")[1])
             
@@ -867,7 +858,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.answer("❌ An error occurred", show_alert=True)
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Cancel current admin operation"""
+    """Cancel current admin operation - ENHANCED VERSION"""
     user = update.effective_user
     
     if not is_admin(user.id):
@@ -972,20 +963,8 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     user_manager.log_admin_action(user.id, f"broadcast_message", None)
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Enhanced error handler with better conflict handling"""
-    error = context.error
-    
-    # Handle specific error types
-    if isinstance(error, Conflict):
-        logger.warning("Conflict error detected: %s", error)
-        # Don't restart on conflict - let it resolve naturally
-        return
-    elif isinstance(error, (NetworkError, TimedOut)):
-        logger.warning("Network/Timeout error: %s", error)
-        # These will be retried automatically by the application
-        return
-    else:
-        logger.error('Update "%s" caused error "%s"', update, error)
+    """Log errors caused by Updates."""
+    logger.warning('Update "%s" caused error "%s"', update, context.error)
 
 async def set_bot_commands(application: Application) -> None:
     """Set bot commands for better UX"""
@@ -1001,47 +980,22 @@ async def set_bot_commands(application: Application) -> None:
     ]
     await application.bot.set_my_commands(commands)
 
-async def periodic_cleanup(context: ContextTypes.DEFAULT_TYPE):
-    """Periodic cleanup task"""
-    try:
-        cleaned_users = user_manager.cleanup_inactive_users()
-        expired_replies = user_manager.check_reply_timeouts(30)
-        
-        if cleaned_users > 0 or expired_replies > 0:
-            logger.info(f"Periodic cleanup: {cleaned_users} users, {expired_replies} reply sessions")
-    except Exception as e:
-        logger.error(f"Error in periodic cleanup: {e}")
-
 def main() -> None:
-    """Start the bot with enhanced error handling"""
+    """Start the bot"""
     if not BOT_TOKEN or BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
-        logger.error("Please set your BOT_TOKEN!")
+        logger.error("Please set your BOT_TOKEN in the configuration section!")
         return
     
     if GROUP_ID == -1001234567890:
-        logger.error("Please set your GROUP_ID!")
+        logger.error("Please set your GROUP_ID in the configuration section!")
         return
     
-    if not ADMIN_IDS or ADMIN_IDS == [123456789, 987654321]:
-        logger.error("Please set your ADMIN_IDS!")
+    if ADMIN_IDS == [123456789, 987654321]:
+        logger.error("Please set your ADMIN_IDS in the configuration section!")
         return
     
-    # Enhanced HTTP request configuration
-    request = HTTPXRequest(
-        http_version="1.1",
-        read_timeout=60,  # Increased timeout
-        write_timeout=60,
-        connect_timeout=30,
-        pool_timeout=10
-    )
-    
-    # Create application with enhanced configuration
-    application = Application.builder()\
-        .token(BOT_TOKEN)\
-        .request(request)\
-        .get_updates_request(request)\
-        .concurrent_updates(True)\
-        .build()
+    # Create application
+    application = Application.builder().token(BOT_TOKEN).build()
     
     # Add handlers
     application.add_handler(CommandHandler("start", start_command))
@@ -1058,14 +1012,17 @@ def main() -> None:
     # Add error handler
     application.add_error_handler(error_handler)
     
-    # Schedule periodic tasks
+    # Set bot commands
     application.job_queue.run_once(
         lambda context: asyncio.create_task(set_bot_commands(application)), 
         when=1
     )
     
     # Cleanup inactive users every hour
-    application.job_queue.run_repeating(periodic_cleanup, interval=3600)
+    application.job_queue.run_repeating(
+        lambda context: user_manager.cleanup_inactive_users(), 
+        interval=3600
+    )
     
     # Check for expired reply sessions every 30 minutes
     application.job_queue.run_repeating(
@@ -1075,18 +1032,8 @@ def main() -> None:
     
     logger.info("Bot started successfully! Ready to handle messages.")
     
-    # Enhanced polling configuration with automatic retry
-    try:
-        application.run_polling(
-            allowed_updates=Update.ALL_TYPES,
-            drop_pending_updates=True,  # Drop pending updates on restart
-            close_loop=False
-        )
-    except Conflict as e:
-        logger.error("Conflict error during startup: %s", e)
-        logger.info("Another bot instance may be running. Please stop it first.")
-    except Exception as e:
-        logger.error("Unexpected error during startup: %s", e)
+    # Run the bot
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == '__main__':
     main()
