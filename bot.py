@@ -37,9 +37,9 @@ logger = logging.getLogger(__name__)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # Bot Configuration - Use environment variables for security
-BOT_TOKEN = os.getenv("BOT_TOKEN", "7953051635:AAGfQ3mXdgPVC4GXQWF_jeHiMVuxD5plCDQ")
-GROUP_ID = int(os.getenv("GROUP_ID", "-1002678613745"))
-ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "5028751785,8171653284").split(",")]
+BOT_TOKEN = os.getenv("BOT_TOKEN", "7958891298:AAFfZgHD-Yb0NJaBrEY1w4Vzi-Ce6r2A8Pc")
+GROUP_ID = int(os.getenv("GROUP_ID", "-1002627868792"))
+ADMIN_IDS = [int(x) for x in os.getenv("ADMIN_IDS", "7374497477,7896869974").split(",")]
 
 # Global variables for admin replies
 admin_reply_targets: Dict[int, int] = {}
